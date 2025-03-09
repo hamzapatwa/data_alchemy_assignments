@@ -1,7 +1,3 @@
-Here’s the updated README reflecting the dataset size change (from **10,000 to 100,000**), **model persistence (storing/loading models)**, and **threading for HTTP requests**:
-
----
-
 # Phishing URL Detection System
 
 ## Overview
