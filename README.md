@@ -118,9 +118,6 @@ The Streamlit dashboard provides an interactive interface with the following fea
 - **Deep Learning Models:** Experiment with LSTMs or CNNs for URL pattern analysis.
 - **Expand Dataset:** Integrate more real-world phishing URL sources.
 
-## Contributors
-- **Your Name** - Project Lead & Machine Learning Engineer
-- **Collaborators** - Contributions to feature extraction, modeling, and visualization.
 
 ## License
 This project is licensed under the MIT License.
