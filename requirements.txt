@@ -10,3 +10,4 @@ watchdog
 graphviz
 watchdog
 xgboost
+whois
