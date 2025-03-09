@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import matplotlib.pyplot as plt  # (Optional if you want local visualizations)
-
-# Sklearn imports for modeling and evaluation
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, confusion_matrix
 from sklearn.tree import DecisionTreeClassifier, export_graphviz
@@ -12,19 +10,13 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from xgboost import XGBClassifier
 from sklearn.svm import SVC
-
-# Graphviz import to visualize the decision tree structure
 import graphviz
-
-# ------------- Additional Imports for the Phishing URL Detector -------------
 import ipaddress
 import re
 import requests
 import pickle
 from urllib.parse import urlparse
 from requests.exceptions import SSLError, Timeout, RequestException
-
-# WHOIS and date libraries for domain age
 import whois
 from datetime import datetime
 import math
@@ -42,6 +34,15 @@ def load_data():
     df = pd.read_csv('urldata.csv')  # Adjust path if needed
     return df
 
+@st.cache_resource  # Use cache_resource so we don't reload the file each time
+def load_pretrained_models(file_path="trained_models.pkl"):
+    """
+    Load previously trained models from a pickle file into a dictionary.
+    Returns a dictionary {model_name: model_object}.
+    """
+    with open(file_path, 'rb') as f:
+        loaded_models = pickle.load(f)
+    return loaded_models
 
 def plot_conf_matrix(y_true, y_pred, labels=("Legit", "Phish"), title="Confusion Matrix"):
     """
@@ -359,7 +360,6 @@ tab_overview, tab_eda, tab_modeling, tab_compare, tab_url_checker = st.tabs(
         "Phishing URL Detector"
     ]
 )
-
 ###############################################################################
 #                        3.A  Data Overview Tab
 ###############################################################################
@@ -452,14 +452,12 @@ with tab_eda:
 ###############################################################################
 with tab_modeling:
     st.subheader("3. Train & Evaluate Models")
-    st.write("Splits the dataset into features (X) and target (y), then trains multiple ML models on the new data.")
 
-    # If there's a domain column, drop it for modeling:
+    # Load and prep data
     if "Domain" in df.columns:
         data_model = df.drop(["Domain"], axis=1).copy()
     else:
         data_model = df.copy()
-
     data_model = data_model.sample(frac=1, random_state=42).reset_index(drop=True)
 
     X = data_model.drop("Label", axis=1)
@@ -470,10 +468,55 @@ with tab_modeling:
     st.write("**Training Set Shape**:", X_train.shape)
     st.write("**Test Set Shape**:", X_test.shape)
 
-    if st.button("Train All Models"):
-        st.write("Training models with new features... please wait.")
-        model_results = train_all_models(X_train, y_train, X_test, y_test)
-        st.success("Training complete!")
+    # ---------- NEW: Option to Load Pretrained Models or Train from Scratch ----------
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Load Pretrained Models from Disk"):
+            loaded_models_dict = load_pretrained_models("trained_models.pkl")
+            # We still need 'model_results' in the same structure that
+            # train_all_models() would produce. So let's build a quick
+            # placeholder with minimal info (we skip the re-training).
+            # We'll just measure accuracy/precision on the test set here for completeness.
+
+            model_results = {}
+            for m_name, m_obj in loaded_models_dict.items():
+                y_pred_train = m_obj.predict(X_train)
+                y_pred_test = m_obj.predict(X_test)
+
+                acc_train = accuracy_score(y_train, y_pred_train)
+                acc_test = accuracy_score(y_test, y_pred_test)
+                prec_train = precision_score(y_train, y_pred_train)
+                prec_test = precision_score(y_test, y_pred_test)
+
+                cm_fig = plot_conf_matrix(y_test, y_pred_test,
+                                          title=f"{m_name} - Confusion Matrix")
+                model_results[m_name] = {
+                    "model_name": m_name,
+                    "model_object": m_obj,
+                    "acc_train": acc_train,
+                    "acc_test": acc_test,
+                    "prec_train": prec_train,
+                    "prec_test": prec_test,
+                    "conf_matrix_fig": cm_fig
+                }
+
+            st.session_state["model_results"] = model_results
+            st.success("Loaded pretrained models from disk and evaluated on the current data split.")
+
+    with col2:
+        if st.button("Train All Models"):
+            st.write("Training models with new features... please wait.")
+            model_results = train_all_models(X_train, y_train, X_test, y_test)
+            st.session_state["model_results"] = model_results
+            st.success("Training complete!")
+
+    # ---------- END NEW SECTION ----------
+
+    # Show results (if any exist in session_state)
+    if "model_results" in st.session_state:
+        st.write("### Model Results")
+        model_results = st.session_state["model_results"]
 
         # Display results for each model using expanders
         for name, res in model_results.items():
@@ -484,21 +527,16 @@ with tab_modeling:
                 st.write(f"**Precision (Test):** {res['prec_test']:.3f}")
                 st.plotly_chart(res["conf_matrix_fig"], use_container_width=True)
 
-        st.session_state["model_results"] = model_results
+        # If we have a Decision Tree, show the structure
+        if "Decision Tree" in model_results:
+            tree_model = model_results["Decision Tree"]["model_object"]
+            st.write("### Decision Tree Structure")
+            tree_graph = get_tree_graph(tree_model, feature_names=X.columns)
+            st.graphviz_chart(tree_graph.source)
 
-        st.write("### Decision Tree Structure")
-        tree_model = model_results["Decision Tree"]["model_object"]
-        tree_graph = get_tree_graph(tree_model, feature_names=X.columns)
-        st.graphviz_chart(tree_graph.source)
     else:
-        st.info("Click 'Train All Models' to start training with the improved dataset.")
+        st.info("No models are loaded or trained yet. Choose an option above to load or train models.")
 
-    st.markdown(
-        """
-        With these new features (domain age, lexical stats, etc.), we should see 
-        improved accuracy/precision compared to the ~87% we had earlier.
-        """
-    )
 
 ###############################################################################
 #                        3.D  Compare All Models Tab
@@ -506,7 +544,7 @@ with tab_modeling:
 with tab_compare:
     st.subheader("4. Compare All Models")
     if "model_results" not in st.session_state:
-        st.warning("No trained models found. Please go to 'Train & Evaluate Models' and click 'Train All Models'.")
+        st.warning("No trained or loaded models found. Go to 'Train & Evaluate Models' to proceed.")
     else:
         model_results = st.session_state["model_results"]
         summary_data = []
@@ -547,17 +585,18 @@ with tab_compare:
             else:
                 st.info("Feature importances are not available for this model.")
         else:
-            st.info("Please train the selected model first.")
+            st.info("Please load or train the selected model first.")
+
 
 ###############################################################################
 #                        3.E  Phishing URL Detector Tab (With Model Selection)
 ###############################################################################
 with tab_url_checker:
     st.subheader("5. Live Phishing URL Detector (New Features)")
-    st.write("Enter a URL to check if it's phishing or not, using one of the newly trained models.")
+    st.write("Enter a URL to check if it's phishing or not, using one of the loaded/trained models.")
 
     if "model_results" not in st.session_state:
-        st.warning("No trained models found. Please go to 'Train & Evaluate Models' and click 'Train All Models'.")
+        st.warning("No models available. Please load or train models in 'Train & Evaluate Models'.")
     else:
         model_names = list(st.session_state["model_results"].keys())
         selected_model = st.selectbox("Select Model for Prediction:", model_names)
@@ -573,15 +612,17 @@ with tab_url_checker:
                 model_obj = st.session_state["model_results"][selected_model]["model_object"]
                 prediction = model_obj.predict(np.array([features_vector]))
 
+                # NOTE: The label mapping in your original dataset was 0=Legit, 1=Phish
+                # Make sure to interpret predictions consistently
                 if prediction[0] == 1:
-                    st.success(f"✅ **Safe URL!** According to `{selected_model}`, this seems legit.")
-                else:
                     st.error(f"🚨 **Phishing Alert!** `{selected_model}` classifies this URL as phishing.")
+                else:
+                    st.success(f"✅ **Safe URL!** According to `{selected_model}`, this seems legit.")
 
         st.markdown(
             """
             **How It Works**:
-            - We now extract an expanded feature set (domain age, lexical distribution, subdomain counts, etc.).
+            - We extract an expanded feature set (domain age, lexical distribution, subdomain counts, etc.).
             - The selected model (e.g., Random Forest, XGBoost, etc.) then makes its prediction.
             - We display whether the URL is considered **Phishing** or **Legit**.
             """
