@@ -7,3 +7,6 @@ plotly
 streamlit
 graphviz
 watchdog
+graphviz
+watchdog
+xgboost
