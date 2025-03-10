@@ -200,9 +200,3 @@ This project is licensed under the MIT License.
 - XGBoost documentation (https://xgboost.readthedocs.io/)
 
 ---
-
-### **Updates Added:**
-✅ **Batch URL processing**  
-✅ **Parallel WHOIS and HTTP feature extraction**  
-✅ **Real-time predictions under 2 seconds**  
-✅ **Automated model storage & loading**  

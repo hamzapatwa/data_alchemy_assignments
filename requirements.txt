@@ -4,6 +4,7 @@ matplotlib
 seaborn
 scikit-learn
 plotly
+requests
 streamlit
 graphviz
 watchdog
