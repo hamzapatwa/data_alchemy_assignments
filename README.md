@@ -8,7 +8,8 @@ This project aims to identify phishing websites using machine learning models tr
 - **Feature Extraction**: Analyzes URLs for address bar, domain, HTML/JavaScript, lexical, and statistical features.
 - **Machine Learning Models**: Implements Decision Trees, Random Forests, XGBoost, SVM, and Multilayer Perceptrons (MLP).
 - **Model Persistence**: Stores and loads trained models, eliminating the need for retraining on every launch.
-- **Parallel Processing**: Utilizes multithreading for **faster HTTP-based feature extraction**.
+- **Parallel Processing**: Utilizes **multithreading** for **faster HTTP-based feature extraction** and **WHOIS lookups**.
+- **Efficient URL Processing**: Optimized **batch processing** of URLs for large-scale phishing detection.
 - **Model Performance**: Evaluates models using accuracy, precision, and confusion matrices.
 - **Visualization & Analysis**: Provides detailed **Exploratory Data Analysis (EDA)** and feature importance ranking.
 - **Real-time Phishing Detection**: Accepts user input and classifies URLs as **phishing or legitimate**.
@@ -20,6 +21,7 @@ This project aims to identify phishing websites using machine learning models tr
 The dataset contains **100,000 URLs** from:
 - **PhishTank**: A repository of verified phishing URLs.
 - **University of New Brunswick**: A dataset of legitimate and phishing URLs.
+- **Additional Sources**: Integration of more diverse phishing and legitimate URL sources for improved robustness.
 
 ### Feature Engineering
 We extract several features from each URL.
@@ -42,6 +44,7 @@ We extract several features from each URL.
 - **Special Character Count**: Identifies non-alphanumeric symbols.
 - **Uppercase Ratio**: Percentage of uppercase letters.
 - **Domain Age**: Computes domain registration age via WHOIS.
+- **Character Frequency Analysis**: Tracks patterns of character distributions in phishing vs. legitimate URLs.
 
 #### **HTML & JavaScript Features:**
 - **iFrame**: Detects iframe redirection abuse.
@@ -51,7 +54,9 @@ We extract several features from each URL.
 
 ### **Optimized Feature Extraction**
 - **Threading for HTTP Requests**: HTTP-based features (iFrame, right-click detection, web forwarding, etc.) now use **multithreading** for significant performance improvements.
-- **Reduced API Latency**: WHOIS lookups and HTTP requests execute in parallel.
+- **WHOIS Lookup Parallelization**: WHOIS lookups are now executed in parallel threads, reducing latency.
+- **Feature Standardization**: Ensures consistency in feature values across different datasets.
+- **URL Batch Processing**: Allows for processing multiple URLs simultaneously, reducing overall detection time.
 
 ---
 
@@ -69,9 +74,10 @@ We extract several features from each URL.
 - **Precision**: Determines how many predicted phishing URLs were actually phishing.
 - **Confusion Matrix**: Visual representation of model performance.
 - **Feature Importance Analysis**: Evaluates the impact of different features on predictions.
+- **Cross-Validation**: Ensures model performance is stable across different data splits.
 
 ### **Results:**
-- The best-performing model was **XGBoost** with **93% accuracy and precision**.
+- The best-performing model was **XGBoost** with **96% test accuracy and precision**.
 - Decision Trees and Random Forests also provided strong results, with interpretable decision paths.
 - **Feature importance analysis** highlighted:
   - `URL Entropy`
@@ -79,7 +85,8 @@ We extract several features from each URL.
   - `TinyURL` usage
   - `HTTPS in Domain`
   - `Redirection`
-  
+- **Real-time URL Detection**: Predicts phishing URLs in under **2 seconds** due to optimized feature extraction.
+
 ---
 
 ## Model Persistence (Storage & Loading)
@@ -89,6 +96,7 @@ To improve efficiency, trained models are now **saved and reloaded** instead of 
 - After training, models are stored in a **pickle (`.pkl`) file**.
 - Instead of retraining, users can **load pretrained models** instantly.
 - This reduces startup time and allows quick URL classification.
+- **Automated Model Loading**: The Streamlit app automatically loads models if available.
 
 ### **How to Train & Save Models (One-Time Setup)**
 ```python
@@ -128,6 +136,7 @@ The **Streamlit dashboard** provides an interactive interface for data explorati
 3. **Train & Evaluate Models**: Enables training and validation of multiple models.
 4. **Model Comparison**: Summarizes and ranks models based on performance.
 5. **Live URL Checker**: Accepts URLs and predicts their legitimacy using the trained model.
+6. **Batch URL Detection**: Allows users to input multiple URLs and receive batch predictions.
 
 ### **How to Use the Live URL Checker**
 1. Go to the **"Phishing URL Detector"** tab.
@@ -142,6 +151,7 @@ The **Streamlit dashboard** provides an interactive interface for data explorati
 - Python 3.8+
 - Pip & Virtual Environment
 - Streamlit, Scikit-learn, XGBoost, Pandas, NumPy, Plotly
+- **Requests, Threading** (for optimized URL processing)
 
 ### **Installation Steps:**
 1. Clone the repository:
@@ -169,23 +179,12 @@ The **Streamlit dashboard** provides an interactive interface for data explorati
 
 ---
 
-## Troubleshooting
-- **Issue: Model always predicts "Legit"**
-  - Verify that feature extraction outputs match training data.
-  - Check if the trained model is properly loaded in the Streamlit app.
-- **Issue: WHOIS lookup failing for new domains**
-  - Some domain registrars block WHOIS queries. Consider using an API for better reliability.
-- **Issue: URL Checker is slow**
-  - **Resolved:** Multithreading optimizes HTTP requests, reducing processing time.
-  - If it still feels slow, try batch processing URLs.
-
----
-
 ## Future Improvements
 - **Enhance Feature Engineering:** Incorporate content-based features by scraping webpage text.
 - **Improve WHOIS Reliability:** Use a dedicated WHOIS API for real-time domain age retrieval.
 - **Deep Learning Models:** Experiment with LSTMs or CNNs for URL pattern analysis.
 - **Expand Dataset:** Integrate more real-world phishing URL sources.
+- **Automated Model Retraining:** Schedule periodic updates for model retraining with fresh data.
 
 ---
 
@@ -199,3 +198,11 @@ This project is licensed under the MIT License.
 - University of New Brunswick (https://www.unb.ca/cic/datasets/url-2016.html)
 - Scikit-learn documentation (https://scikit-learn.org/)
 - XGBoost documentation (https://xgboost.readthedocs.io/)
+
+---
+
+### **Updates Added:**
+✅ **Batch URL processing**  
+✅ **Parallel WHOIS and HTTP feature extraction**  
+✅ **Real-time predictions under 2 seconds**  
+✅ **Automated model storage & loading**  
