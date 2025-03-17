@@ -9,7 +9,6 @@ from sklearn.tree import DecisionTreeClassifier, export_graphviz
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.neural_network import MLPClassifier
 from xgboost import XGBClassifier
-from sklearn.svm import SVC
 import graphviz
 import ipaddress
 import re
@@ -17,9 +16,11 @@ import requests
 import pickle
 from urllib.parse import urlparse
 from requests.exceptions import SSLError, Timeout, RequestException
-import whois
+import whoisdomain
 from datetime import datetime
 import math
+import subprocess
+import whois
 
 ###############################################################################
 #                           1. HELPER FUNCTIONS
@@ -34,15 +35,14 @@ def load_data():
     df = pd.read_csv('urldata.csv')  # Adjust path if needed
     return df
 
-@st.cache_resource  # Use cache_resource so we don't reload the file each time
+@st.cache_resource
 def load_pretrained_models(file_path="trained_models.pkl"):
-    """
-    Load previously trained models from a pickle file into a dictionary.
-    Returns a dictionary {model_name: model_object}.
-    """
-    with open(file_path, 'rb') as f:
-        loaded_models = pickle.load(f)
-    return loaded_models
+    """Load models from disk and store in session state."""
+    if "model_results" not in st.session_state:
+        with open(file_path, 'rb') as f:
+            st.session_state["model_results"] = pickle.load(f)
+    return st.session_state["model_results"]
+
 
 def plot_conf_matrix(y_true, y_pred, labels=("Legit", "Phish"), title="Confusion Matrix"):
     """
@@ -70,7 +70,6 @@ def train_all_models(X_train, y_train, X_test, y_test):
       - Random Forest
       - Multilayer Perceptrons (MLP)
       - XGBoost
-      - SVM
 
     Returns:
     - Dictionary containing each model's object, predictions, accuracy,
@@ -98,7 +97,7 @@ def train_all_models(X_train, y_train, X_test, y_test):
         }
 
     # 1) Decision Tree
-    tree = DecisionTreeClassifier(max_depth=5, random_state=42)
+    tree = DecisionTreeClassifier(max_depth=20, random_state=42)
     tree.fit(X_train, y_train)
     model_results["Decision Tree"] = store_model(
         "Decision Tree",
@@ -108,7 +107,7 @@ def train_all_models(X_train, y_train, X_test, y_test):
     )
 
     # 2) Random Forest
-    forest = RandomForestClassifier(max_depth=5, random_state=42)
+    forest = RandomForestClassifier(max_depth=40, random_state=42)
     forest.fit(X_train, y_train)
     model_results["Random Forest"] = store_model(
         "Random Forest",
@@ -118,7 +117,7 @@ def train_all_models(X_train, y_train, X_test, y_test):
     )
 
     # 3) MLP
-    mlp = MLPClassifier(alpha=0.001, hidden_layer_sizes=(100, 100, 100), random_state=42)
+    mlp = MLPClassifier(alpha=0.001, hidden_layer_sizes=(200, 200, 200), random_state=42)
     mlp.fit(X_train, y_train)
     model_results["Multilayer Perceptrons"] = store_model(
         "Multilayer Perceptrons",
@@ -128,23 +127,13 @@ def train_all_models(X_train, y_train, X_test, y_test):
     )
 
     # 4) XGBoost
-    xgb = XGBClassifier(learning_rate=0.4, max_depth=7, random_state=42)
+    xgb = XGBClassifier(learning_rate=0.4, max_depth=42, random_state=42)
     xgb.fit(X_train, y_train)
     model_results["XGBoost"] = store_model(
         "XGBoost",
         xgb,
         xgb.predict(X_train),
         xgb.predict(X_test)
-    )
-
-    # 5) SVM
-    svm = SVC(kernel='linear', C=1.0, random_state=42)
-    svm.fit(X_train, y_train)
-    model_results["SVM"] = store_model(
-        "SVM",
-        svm,
-        svm.predict(X_train),
-        svm.predict(X_test)
     )
 
     return model_results
@@ -170,7 +159,6 @@ def get_tree_graph(tree_model, feature_names):
 # 2. ENHANCED PHISHING URL DETECTOR FUNCTIONS
 ###############################################################################
 
-
 def calculate_entropy(s):
     """Calculate the Shannon entropy of a string."""
     if not s:
@@ -195,17 +183,22 @@ def uppercase_ratio(url):
     return sum(1 for c in url if c.isupper()) / len(url)
 
 def get_domain_age(domain):
-    # WHOIS lookup can fail; handle exceptions.
     try:
+        import whois  # Ensure you're importing the correct whois library
         w = whois.whois(domain)
         creation_date = w.creation_date
+        # Sometimes creation_date is a list, so take the first element
         if isinstance(creation_date, list):
             creation_date = creation_date[0]
-        if not creation_date:
+        if creation_date is None:
+            print("No creation date found in WHOIS data")
             return -1
-        return (datetime.now() - creation_date).days
-    except Exception:
-        return -1  # indicates WHOIS lookup failure or no domain info
+        age_days = (datetime.now() - creation_date).days
+        print(f"Domain age: {age_days} days (created on {creation_date})")
+        return age_days
+    except Exception as e:
+        print(f"Error: {e}")
+        return -1
 
 def get_http_response(url):
     try:
@@ -234,6 +227,23 @@ def forwarding_check(response):
         return 1
     return 1 if len(response.history) > 2 else 0
 
+def is_ip_address(url):
+    # Simple utility to check if the netloc is an IP
+    try:
+        ipaddress.ip_address(url)
+        return True
+    except:
+        return False
+
+def convert_features_to_numeric(feat_list):
+    """
+    Convert any string placeholders (like domain) to 0 or drop them if your final
+    model doesn't expect them. If your trained model expects 'Domain' to be dropped,
+    remove it. Otherwise, handle it.
+    """
+    if isinstance(feat_list[0], str):
+        feat_list = feat_list[1:]  # Remove the first item, which is domain
+    return [float(val) if not isinstance(val, str) else 0.0 for val in feat_list]
 
 def extract_features(url: str) -> list:
     """
@@ -244,13 +254,11 @@ def extract_features(url: str) -> list:
       4) HTML/JS-based features from the live HTTP response
     Returns a list of numeric feature values that match the final dataset’s column order.
     """
-
     # 1. Address bar-based features
     domain = urlparse(url).netloc
     if re.match(r"^www\.", domain):
         domain = domain.replace("www.", "")
 
-    # Some existing features
     ip_feat = 1 if is_ip_address(url) else 0
     at_feat = 1 if "@" in url else 0
     length_feat = 1 if len(url) >= 54 else 0
@@ -272,8 +280,7 @@ def extract_features(url: str) -> list:
     tiny_feat = 1 if re.search(short_regex, url) else 0
     prefix_feat = 1 if '-' in domain else 0
 
-
-    # 2. New Lexical / Statistical Features
+    # 2. Lexical / Statistical Features
     url_entropy = calculate_entropy(url)
     domain_entropy = calculate_entropy(domain)
     subdomain_ct = count_subdomains(domain)
@@ -282,17 +289,14 @@ def extract_features(url: str) -> list:
     uppercase_rat = uppercase_ratio(url)
     domain_age = get_domain_age(domain)
 
-    # 3. Get the actual HTTP response for HTML-based features
-    response = get_http_response(url)  # gracefully handles timeouts
+    # 3. HTML-based features
+    response = get_http_response(url)
     iframe_feat = iframe_check(response)
     mouse_feat = mouse_over_check(response)
     right_click_feat = right_click_check(response)
     forward_feat = forwarding_check(response)
 
-    # 4. Build the final feature list in the same order as your “improved dataset”
-    # EXACT ORDER matters if you're using the same trained model.
-    # This is an example matching your final dataset columns:
-
+    # 4. Build the final feature list in the same order as your improved dataset
     features_list = [
         domain,
         ip_feat,
@@ -316,36 +320,21 @@ def extract_features(url: str) -> list:
         forward_feat,
     ]
 
-
     return convert_features_to_numeric(features_list)
-
-def is_ip_address(url):
-    # Simple utility to check if the netloc is an IP
-    try:
-        ipaddress.ip_address(url)
-        return True
-    except:
-        return False
-
-def convert_features_to_numeric(feat_list):
-    """
-    Convert any string placeholders (like domain) to 0 or drop them if your final
-    model doesn't expect them. If your trained model expects 'Domain' to be dropped,
-    remove it. Otherwise, handle it.
-    """
-
-    if isinstance(feat_list[0], str):
-        # Drop the domain string
-        feat_list = feat_list[1:]  # Remove the first item
-    # Now feat_list is purely numeric
-    return [float(val) if not isinstance(val, str) else 0.0 for val in feat_list]
 
 
 ###############################################################################
-# 3. STREAMLIT LAYOUT / TABS
+#                           STREAMLIT APP LAYOUT
 ###############################################################################
 st.set_page_config(page_title="Phishing Detection App", layout="wide")
 st.title("Phishing URL Detection — Full Analysis (Improved)")
+st.markdown(
+    """
+    **New Update:**  
+    We've now integrated improved WHOIS lookups and batch processing for feature extraction.  
+    This means we can now process virtually unlimited URLs (previously capped at ~30,000) without running out of memory.
+    """
+)
 
 # Load the data
 df = load_data()
@@ -360,8 +349,9 @@ tab_overview, tab_eda, tab_modeling, tab_compare, tab_url_checker = st.tabs(
         "Phishing URL Detector"
     ]
 )
+
 ###############################################################################
-#                        3.A  Data Overview Tab
+# 3.A  Data Overview Tab
 ###############################################################################
 with tab_overview:
     st.subheader("1. Data Overview")
@@ -370,23 +360,24 @@ with tab_overview:
         The dataset **urldata.csv** contains URL-derived features. Each row represents one URL
         and whether it's labeled as *Phish* (1) or *Legit* (0).
 
-       **We have updated our dataset and feature extraction logic** with 
-        lexical/stats features, and advanced checks. Our previous best model had ~87% 
-        accuracy and precision; these new features should further improve performance!
+        **Updates**:
+        - Integrated WHOIS lookups and batch processing to efficiently handle large datasets.
+        - New lexical/statistical features added (e.g., entropy, subdomain counts, uppercase ratio).
+        - Memory management improvements allow us to scale beyond ~30,000 URLs.
 
-        **Legend / Feature Explanation**:
-        - `Having_IP`: Whether the domain portion is purely an IP address instead of a typical domain name.
-        - `Have_At`: Whether an '@' symbol is present in the URL (often suspicious).
-        - `URL_Length`: 0 if short, 1 if >= 54 characters.
-        - `URL_Depth`: The number of path segments in the URL.
-        - `Redirection`: Checks '//' occurrences beyond protocol.
-        - `HTTPS_in_Domain`: Checks if 'https' is used inside the domain name.
-        - `TinyURL`: Checks if it uses known link-shortening services.
-        - `Prefix/Suffix`: 1 if a dash ('-') is found in the domain.
-        - `Iframe, Mouse_Over, Right_Click, Web_Forwards`: Suspicious HTML/JS behaviors found in the page source.
-        - `Lexical Features`: Analysis on the randomness of the URL.
+        **Key Features**:
+        - `Having_IP`: Whether the domain portion is purely an IP address.
+        - `Have_At`: Checks '@' symbol usage.
+        - `URL_Length`: ≥54 chars is suspicious.
+        - `URL_Depth`: Count of '/' segments.
+        - `Redirection`: Looks for '//' beyond protocol.
+        - `HTTPS_in_Domain`: 'https' found in domain name.
+        - `TinyURL`: Known link-shortener detection.
+        - `Prefix/Suffix`: '-' in domain.
+        - `Iframe`, `Mouse_Over`, `Right_Click`, `Web_Forwards`: Suspicious HTML/JS behaviors.
+        - `Lexical Features`: Entropy, uppercase ratio, domain age, subdomains, digit count, etc.
 
-        **Shape of original data**:
+        **Shape of data**:
         """
     )
     st.write(df.shape)
@@ -395,7 +386,7 @@ with tab_overview:
     if "Domain" in df.columns:
         st.write("**Note**: The 'Domain' column is dropped in modeling (non-numeric).")
     else:
-        st.write("**Domain column** not present or already removed.")
+        st.write("**Domain** column not present or already removed.")
 
     st.write("### Missing values per column:")
     st.write(df.isnull().sum())
@@ -403,20 +394,20 @@ with tab_overview:
     st.info(
         """
         **Goal**:  
-        1) Explore data and visualize feature distributions (EDA).  
-        2) Train classification models to distinguish phishing vs. legit URLs.  
-        3) Compare performance and see which model is best.  
-        4) Provide a live URL checker that uses our trained MLP model.
+        1) Explore data (EDA).  
+        2) Train classification models (Decision Tree, Random Forest, MLP, XGBoost).  
+        3) Compare model performance & interpret feature importances.  
+        4) Provide a live URL checker using the newly trained or loaded models.
         """
     )
 
 ###############################################################################
-#                        3.B  EDA Tab
+# 3.B  EDA Tab
 ###############################################################################
 with tab_eda:
     st.subheader("2. Exploratory Data Analysis (EDA)")
 
-    # If there's a 'Domain' column, drop it for numeric analysis
+    # If 'Domain' column exists, drop for numeric analysis
     if "Domain" in df.columns:
         data_eda = df.drop("Domain", axis=1).copy()
     else:
@@ -425,9 +416,13 @@ with tab_eda:
     data_eda = data_eda.sample(frac=1, random_state=42).reset_index(drop=True)
 
     st.markdown("### Distribution of a Numeric Column")
-    numeric_cols = [col for col in data_eda.columns if data_eda[col].dtype in [np.int64, np.float64] and col != 'Label']
+    numeric_cols = [
+        col for col in data_eda.columns
+        if data_eda[col].dtype in [np.int64, np.float64] and col != 'Label'
+    ]
+
     if numeric_cols:
-        chosen_col = st.selectbox("Select a numeric column to visualize distribution:", numeric_cols)
+        chosen_col = st.selectbox("Select a numeric column:", numeric_cols)
         fig_hist = px.histogram(data_eda, x=chosen_col, title=f"Distribution of {chosen_col}")
         st.plotly_chart(fig_hist, use_container_width=True)
     else:
@@ -448,12 +443,17 @@ with tab_eda:
         st.write("Not enough numeric columns to display a correlation heatmap.")
 
 ###############################################################################
-#                        3.C  Train & Evaluate Tab
+# 3.C  Train & Evaluate Models Tab
 ###############################################################################
 with tab_modeling:
     st.subheader("3. Train & Evaluate Models")
 
-    # Load and prep data
+    if "model_results" in st.session_state:
+        st.success("✅ Pretrained models are already loaded! No need to reload.")
+    else:
+        st.warning("No models found. Load or train models below.")
+
+    # Prep data
     if "Domain" in df.columns:
         data_model = df.drop(["Domain"], axis=1).copy()
     else:
@@ -468,17 +468,12 @@ with tab_modeling:
     st.write("**Training Set Shape**:", X_train.shape)
     st.write("**Test Set Shape**:", X_test.shape)
 
-    # ---------- NEW: Option to Load Pretrained Models or Train from Scratch ----------
+    # --- Option to Load Pretrained or Train from Scratch ---
     col1, col2 = st.columns(2)
 
     with col1:
         if st.button("Load Pretrained Models from Disk"):
             loaded_models_dict = load_pretrained_models("trained_models.pkl")
-            # We still need 'model_results' in the same structure that
-            # train_all_models() would produce. So let's build a quick
-            # placeholder with minimal info (we skip the re-training).
-            # We'll just measure accuracy/precision on the test set here for completeness.
-
             model_results = {}
             for m_name, m_obj in loaded_models_dict.items():
                 y_pred_train = m_obj.predict(X_train)
@@ -489,8 +484,7 @@ with tab_modeling:
                 prec_train = precision_score(y_train, y_pred_train)
                 prec_test = precision_score(y_test, y_pred_test)
 
-                cm_fig = plot_conf_matrix(y_test, y_pred_test,
-                                          title=f"{m_name} - Confusion Matrix")
+                cm_fig = plot_conf_matrix(y_test, y_pred_test, title=f"{m_name} - Confusion Matrix")
                 model_results[m_name] = {
                     "model_name": m_name,
                     "model_object": m_obj,
@@ -502,23 +496,20 @@ with tab_modeling:
                 }
 
             st.session_state["model_results"] = model_results
-            st.success("Loaded pretrained models from disk and evaluated on the current data split.")
+            st.success("Loaded pretrained models from 'trained_models.pkl' and evaluated them.")
 
     with col2:
         if st.button("Train All Models"):
-            st.write("Training models with new features... please wait.")
+            st.write("Training models... please wait.")
             model_results = train_all_models(X_train, y_train, X_test, y_test)
             st.session_state["model_results"] = model_results
             st.success("Training complete!")
 
-    # ---------- END NEW SECTION ----------
-
-    # Show results (if any exist in session_state)
+    # Show results if available
     if "model_results" in st.session_state:
         st.write("### Model Results")
         model_results = st.session_state["model_results"]
 
-        # Display results for each model using expanders
         for name, res in model_results.items():
             with st.expander(f"{name} Results", expanded=False):
                 st.write(f"**Accuracy (Train):** {res['acc_train']:.3f}")
@@ -527,24 +518,16 @@ with tab_modeling:
                 st.write(f"**Precision (Test):** {res['prec_test']:.3f}")
                 st.plotly_chart(res["conf_matrix_fig"], use_container_width=True)
 
-        # If we have a Decision Tree, show the structure
-        if "Decision Tree" in model_results:
-            tree_model = model_results["Decision Tree"]["model_object"]
-            st.write("### Decision Tree Structure")
-            tree_graph = get_tree_graph(tree_model, feature_names=X.columns)
-            st.graphviz_chart(tree_graph.source)
-
     else:
-        st.info("No models are loaded or trained yet. Choose an option above to load or train models.")
-
+        st.info("No models loaded or trained yet. Use one of the above buttons.")
 
 ###############################################################################
-#                        3.D  Compare All Models Tab
+# 3.D  Compare All Models Tab
 ###############################################################################
 with tab_compare:
     st.subheader("4. Compare All Models")
     if "model_results" not in st.session_state:
-        st.warning("No trained or loaded models found. Go to 'Train & Evaluate Models' to proceed.")
+        st.warning("No trained/loaded models. Go to 'Train & Evaluate Models' to proceed.")
     else:
         model_results = st.session_state["model_results"]
         summary_data = []
@@ -562,14 +545,11 @@ with tab_compare:
         ).reset_index(drop=True)
 
         st.dataframe(summary_df)
-        st.markdown("**Highest performing model** is at the top of this table.")
+        st.markdown("**Top model** is listed first based on test accuracy & precision.")
 
         st.write("### Feature Importances")
-        st.write("For models that support feature importances (Random Forest, XGBoost, Decision Tree), pick one:")
-        model_choice = st.selectbox(
-            "Pick a model for feature importances:",
-            ["Random Forest", "XGBoost", "Decision Tree"]
-        )
+        st.write("For models that support feature importances (Random Forest, XGBoost, Decision Tree):")
+        model_choice = st.selectbox("Pick a model:", ["Random Forest", "XGBoost", "Decision Tree"])
         if model_choice in model_results:
             model_obj = model_results[model_choice]["model_object"]
             importances = getattr(model_obj, "feature_importances_", None)
@@ -585,18 +565,17 @@ with tab_compare:
             else:
                 st.info("Feature importances are not available for this model.")
         else:
-            st.info("Please load or train the selected model first.")
-
+            st.info("Please train/load the selected model first.")
 
 ###############################################################################
-#                        3.E  Phishing URL Detector Tab (With Model Selection)
+# 3.E  Phishing URL Detector Tab (With Model Selection)
 ###############################################################################
 with tab_url_checker:
     st.subheader("5. Live Phishing URL Detector (New Features)")
     st.write("Enter a URL to check if it's phishing or not, using one of the loaded/trained models.")
 
     if "model_results" not in st.session_state:
-        st.warning("No models available. Please load or train models in 'Train & Evaluate Models'.")
+        st.warning("No models available. Please train or load models in 'Train & Evaluate Models' tab.")
     else:
         model_names = list(st.session_state["model_results"].keys())
         selected_model = st.selectbox("Select Model for Prediction:", model_names)
@@ -606,24 +585,35 @@ with tab_url_checker:
             if not url_input.strip():
                 st.warning("Please enter a valid URL.")
             else:
-                # Extract features with the new logic
                 st.write("Extracting advanced features (domain age, lexical stats, etc.)...")
-                features_vector = extract_features(url_input)
+                # Get the selected model object
                 model_obj = st.session_state["model_results"][selected_model]["model_object"]
-                prediction = model_obj.predict(np.array([features_vector]))
 
-                # NOTE: The label mapping in your original dataset was 0=Legit, 1=Phish
-                # Make sure to interpret predictions consistently
+                # Extract features from the URL
+                features_vector = extract_features(url_input)
+
+                # Define feature columns: drop 'Domain' and 'Label' from df for training
+                if "Domain" in df.columns:
+                    feature_cols = list(df.drop(["Domain", "Label"], axis=1).columns)
+                else:
+                    feature_cols = list(df.drop("Label", axis=1).columns)
+
+                # Convert the extracted features to a DataFrame using the defined columns
+                features_df = pd.DataFrame([features_vector], columns=feature_cols)
+
+                # Make prediction using the model
+                prediction = model_obj.predict(features_df)
+
+                # Interpret prediction (assuming 1=Phish, 0=Legit)
                 if prediction[0] == 1:
                     st.error(f"🚨 **Phishing Alert!** `{selected_model}` classifies this URL as phishing.")
                 else:
-                    st.success(f"✅ **Safe URL!** According to `{selected_model}`, this seems legit.")
+                    st.success(f"✅ **Safe URL!** `{selected_model}` says this seems legit.")
 
         st.markdown(
             """
             **How It Works**:
             - We extract an expanded feature set (domain age, lexical distribution, subdomain counts, etc.).
-            - The selected model (e.g., Random Forest, XGBoost, etc.) then makes its prediction.
-            - We display whether the URL is considered **Phishing** or **Legit**.
+            - The selected trained model then classifies it as either *Phishing* or *Legit*.
             """
         )
