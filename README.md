@@ -1,144 +1,152 @@
-# **Phishing URL Detection System**
+# 🛡️ Phishing URL Detector Pro
 
-## **Overview**
-This project detects phishing websites using machine learning models trained on extracted URL features. **Phishing websites mimic legitimate ones** to trick users into entering sensitive information. Our system applies **advanced feature extraction, model optimization, and real-time URL classification** via a **Streamlit dashboard**.
+## Overview
+**Phishing URL Detector Pro** is a multi-page Streamlit dashboard that leverages machine learning to detect phishing websites based on structural, lexical, WHOIS, and HTML/JS features. This tool empowers users to explore how phishing detection works—from data analysis and model training to real-time predictions.
 
-## **What's New?**
-🚀 **Major Updates & Optimizations**:
-- **Achieved >99% Test Accuracy & Precision** 🎯 through **model finetuning**.
-- **WHOIS Domain Age Lookup Optimized** ⏳: Parallel WHOIS queries speed up processing.
-- **Batch Processing for Large Datasets** 📊: We now process **unlimited URLs** (previously ~30K limit).
-- **Improved URL Feature Extraction** 🔍: Now **20+ features** covering lexical, statistical, and HTML-based signals.
-- **Pretrained Models for Instant Predictions** 🚀: No need to retrain every time!
-- **Live URL Checker** 🌐: Paste a URL and get a phishing verdict in **<2 seconds**.
+> **Why it matters:** Phishing attacks are one of the most prevalent cyber threats. Automating URL classification using ML helps reduce risk at scale and enhances proactive defense mechanisms.
 
 ---
 
-## **Features & Capabilities**
-✔ **Handles Large Datasets**: **100,000 URLs** (50K phishing, 50K legitimate).  
-✔ **Advanced Feature Engineering**: URL-based, lexical, statistical, WHOIS, and JavaScript-based indicators.  
-✔ **Parallel Processing**: **Multithreading** for HTTP/WHOIS requests speeds up processing.  
-✔ **Optimized Batch Processing**: Efficient **disk storage frees up memory** for large datasets.  
-✔ **Machine Learning Models**: Uses **Decision Trees, Random Forests, XGBoost, MLP**.  
-✔ **Streamlit Dashboard**: User-friendly **model evaluation & real-time phishing detection**.  
-✔ **Pretrained Model Storage**: Saves models in `.pkl` format for **fast loading without retraining**.  
+## 🔄 What’s New
+- ✅ **Refactored to a multi-page Streamlit app** for better modularity and UX.
+- 📈 **Achieves >99% accuracy** with XGBoost and Random Forest.
+- ⚙️ Optimized WHOIS domain age feature with fallbacks.
+- 📊 Enhanced EDA and feature visualization.
+- 🔍 Real-time URL detector with improved feature extraction.
 
 ---
 
-## **Dataset**
-We trained on **100,000 URLs**, sourced from:
-- **PhishTank** 🛑: Verified phishing URLs.
-- **University of New Brunswick** 📚: Dataset with phishing & legitimate URLs.
-- **Additional Real-World Data** 🌍: Manually collected and verified sources.
+## ⚙️ Features & Capabilities
+- 🔬 Live phishing URL prediction using trained ML models.
+- 📊 Dataset exploration and visual summaries.
+- 📈 Feature correlation and distribution visualizations.
+- 🛠️ Train custom models (Decision Tree, Random Forest, MLP, XGBoost).
+- ⚖️ Compare models using accuracy, precision, and confusion matrices.
+- 💾 Load pre-trained models for fast testing.
 
 ---
 
-## **Feature Engineering**
-We extract **20+ features** to identify phishing URLs.
-
-### **🔗 Address Bar-Based Features**
-- **Having_IP**: Whether the domain is an IP (common in phishing).
-- **Have_At**: Presence of '@' (phishers use this to trick users).
-- **URL_Length**: Long URLs (>54 characters) are more likely phishing.
-- **URL_Depth**: More `/` indicates a complex path, sometimes phishing.
-- **Redirection**: Checks double `//` after protocol (`http://site.com//evil`).
-- **HTTPS in Domain**: Phishers may **add "https"** in the domain name (not secure).
-- **TinyURL Usage**: Detects shortened links (bit.ly, goo.gl).
-- **Prefix/Suffix**: `-` in domain (`secure-paypal.com` is likely phishing).
-
-### **📊 Lexical & Statistical Features**
-- **URL Entropy**: Higher entropy suggests randomness (phishing links are gibberish).
-- **Domain Entropy**: Measures complexity of domain structure.
-- **Subdomain Count**: More subdomains (`login.bank.secure.com`) suggest phishing.
-- **Digit Count**: Excessive digits in the URL (e.g., `free-prize123.com`) raise suspicion.
-- **Special Character Count**: Symbols like `_`, `-`, `%`, `=`, common in phishing URLs.
-- **Uppercase Ratio**: Random uppercase letters in a domain are suspicious.
-- **Domain Age (WHOIS)**: Old domains are **trustworthy**; phishing sites are often new.
-
-### **💻 HTML & JavaScript Features**
-- **iFrame Detection**: Hidden `iframe` tags are used for phishing.
-- **Mouse Over JavaScript**: JS altering cursor behavior is suspicious.
-- **Right Click Disabled**: Blocks user actions to hide phishing.
-- **Web Forwarding**: Too many redirects indicate phishing.
+## 📁 Dataset
+- **Source**: Public phishing and legitimate URL datasets.
+- **Structure**: CSV format with ~30 extracted features per URL.
+- **Target Label**: `Label` column (0 = Legitimate, 1 = Phishing)
 
 ---
 
-## **🚀 Model Training & Evaluation**
-We finetuned our models and **now achieve >99% test accuracy and precision**!
+## 🧪 Feature Engineering
+Features are grouped into:
 
-### **📊 Models Implemented**
-1. **Decision Tree Classifier 🌳**
-2. **Random Forest Classifier 🌲**
-3. **Multilayer Perceptrons (MLP) 🧠**
-4. **XGBoost Classifier ⚡**
+### 🔗 Address Bar-Based Features
+- `Having_IP`
+- `Have_At`
+- `URL_Length`
+- `URL_Depth`
+- `Redirection`
+- `https_Domain`
+- `TinyURL`
+- `Prefix/Suffix`
 
-### **📈 Performance Metrics**
-- ✅ **Accuracy**: Correct classification rate.
-- 🎯 **Precision**: % of predicted phishing URLs that were actually phishing.
-- 🟩 **Confusion Matrix**: Visual error analysis.
-- 📌 **Feature Importance Analysis**: Identifies key phishing indicators.
-- 🔍 **Cross-Validation**: Ensures consistency across different data splits.
+### 🧠 WHOIS-Based Features
+- `Domain_Age`
+- `Domain_registration_length`
 
-### **🏆 Results:**
-- **XGBoost** is the best model with **99.2% accuracy & precision**.
-- **Random Forest & Decision Trees** also performed well with high interpretability.
-- **Feature importance highlights**:
-  - `URL Entropy`
-  - `Domain Age`
-  - `TinyURL`
-  - `Redirection`
-  - `HTTPS in Domain`
-- **Real-time detection speed**: **<2 seconds** per URL.
+### 💻 HTML & JS Features
+- `iFrame`
+- `Mouse_Over`
+- `Right_Click`
+- `Web_Forwards`
+
+### 📊 Lexical Features
+- `Subdomain_Count`
+- `Entropy`
+
+> Missing or unavailable values are handled with default fallbacks (e.g., -1).
 
 ---
 
-## **💾 Model Persistence (Save & Load)**
-To improve efficiency, **models are stored & reloaded** instead of retraining every launch.
+## 🧠 Model Training & Evaluation
+Train or load the following models:
 
-### **📌 How to Save Models**
+- **Decision Tree**
+- **Random Forest**
+- **MLP (Neural Net)**
+- **XGBoost**
+
+### 🔍 Evaluation Metrics:
+- Accuracy
+- Precision
+- Confusion Matrix (Plotly heatmap)
+- Feature Importance (Bar charts for tree-based models)
+
+---
+
+## 💾 Model Saving & Loading
 ```python
-import pickle
-
-# Save trained models to a file
-trained_models = {
-    'Decision Tree': decision_tree_model,
-    'Random Forest': random_forest_model,
-    'MLP': mlp_model,
-    'XGBoost': xgb_model
-}
-
+# Save trained models
+to_save = {'XGBoost': xgb_model, 'Random Forest': rf_model}
 with open('trained_models.pkl', 'wb') as f:
-    pickle.dump(trained_models, f)
-```
+    pickle.dump(to_save, f)
 
-### **📌 How to Load Models in Streamlit**
-```python
-import pickle
-
-# Load pretrained models
+# Load models in app
 with open('trained_models.pkl', 'rb') as f:
-    loaded_models = pickle.load(f)
+    models = pickle.load(f)
 ```
-- **The Streamlit dashboard automatically loads models** if available.
 
 ---
 
-## **🚀 Future Improvements**
-🔹 **Enhance Feature Engineering**: Extract webpage content-based signals.  
-🔹 **Improve WHOIS API Reliability**: Use a dedicated API for domain lookups.  
-🔹 **Deep Learning**: Experiment with **LSTMs** or **CNNs** for URL analysis.  
-🔹 **Automated Retraining**: Periodically refresh model with new data.  
+## 📁 Multi-Page App Navigation
+### Structure:
+```
+.
+├── 🏠_Home.py               # Main app entry point
+├── utils.py                    # Helper functions (loaders, plots, trainers)
+├── trained_models.pkl          # Pre-trained ML models
+├── urldata.csv                 # Dataset
+├── requirements.txt
+└── pages/
+    ├── 1_📊_Data_Overview.py
+    ├── 2_📈_EDA.py
+    ├── 3_🛠️_Model_Training_&_Evaluation.py
+    ├── 4_⚖️_Model_Comparison.py
+    └── 5_🔍_Live_URL_Detector.py
+```
 
 ---
 
-## **📜 License**
-This project is licensed under the **MIT License**.
+## 🚀 Setup & Installation
+```bash
+# Clone repo or copy files
+pip install -r requirements.txt  # Install Python dependencies
+
+# Run the Streamlit app
+streamlit run 🏠_Home.py
+```
+> Ensure `graphviz` is installed on your system:
+> - macOS: `brew install graphviz`
+> - Ubuntu: `sudo apt install graphviz`
 
 ---
 
-## **📚 References**
-- PhishTank (https://www.phishtank.com/)
-- University of New Brunswick (https://www.unb.ca/cic/datasets/url-2016.html)
-- Scikit-learn (https://scikit-learn.org/)
-- XGBoost (https://xgboost.readthedocs.io/)
+## 📌 Future Work
+- 🧠 Add deep learning models (LSTM for sequence-based analysis).
+- 🔗 Integrate threat intelligence feeds for real-time blacklisting.
+- 📬 Email scanner plugin or browser extension.
+- 🌐 Host as a public web app with authentication.
+- 📈 More advanced visual analytics (SHAP, LIME).
+
+---
+
+## 📚 License & References
+**License**: MIT
+
+**References**:
+- [PhishTank Dataset](https://www.phishtank.com/)
+- [WHOIS Python Module](https://pypi.org/project/python-whois/)
+- [Scikit-learn](https://scikit-learn.org/)
+- [Streamlit Docs](https://docs.streamlit.io/)
+- [XGBoost](https://xgboost.readthedocs.io/)
+
+---
+
+> 🚧 Disclaimer: This tool is for educational and experimental use only. Do not rely on it for production-grade security decisions.
 
