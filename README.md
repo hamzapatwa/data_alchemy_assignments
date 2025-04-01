@@ -9,7 +9,6 @@
 
 ## 🔄 What’s New
 - ✅ **Refactored to a multi-page Streamlit app** for better modularity and UX.
-- 📈 **Achieves >99% accuracy** with XGBoost and Random Forest.
 - ⚙️ Optimized WHOIS domain age feature with fallbacks.
 - 📊 Enhanced EDA and feature visualization.
 - 🔍 Real-time URL detector with improved feature extraction.
